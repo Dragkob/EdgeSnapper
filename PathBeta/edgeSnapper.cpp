@@ -156,8 +156,7 @@ int main() {
     std::wcout << L"Creating handle to process " << targetPid << std::endl;
     
     
-    // Note: VA Cloning requires PROCESS_ALL_ACCESS or PROCESS_CREATE_PROCESS to succeed on modern Windows
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_CREATE_PROCESS | PROCESS_DUP_HANDLE, FALSE, targetPid);
     if (!hProcess) {
         SetColor(12); std::cerr << "[-] "; SetColor(7);
         std::cerr << "OpenProcess failed. Error: " << GetLastError() << std::endl;
