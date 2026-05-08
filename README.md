@@ -9,6 +9,8 @@ This raises a critical question: <b><i>what is Microsoft Edge actually protectin
 
 The toolkit provides both: Live in-memory inspection & Offline forensic dump analysis for defensive research, memory forensics, and browser security auditing.
 
+> [!CAUTION]
+> This project is intended strictly for authorized security auditing, memory forensics research, and educational purposes. It is designed to demonstrate the security implications of transient cleartext credential exposure within application memory. Any unauthorized use against systems, accounts, or environments without explicit permission is strictly prohibited.  The author assumes no responsibility or liability for any misuse, damage, legal consequences, or unauthorized activities arising from the use of this project.
 
 ## Attack Paths
 
@@ -45,15 +47,7 @@ This helps reduce:
 #
 
 > [!WARNING]
-> This project is intended strictly for:
-> - Authorized security auditing
-> - Memory forensics research
-> - Defensive browser security analysis
-> - Educational purposes
->
-> The toolkit is designed to demonstrate the security implications of transient cleartext credential exposure in application memory.
->
-> Unauthorized use against systems, accounts, or environments without explicit permission is prohibited.
+> 
 
 #
 Inspired by [the original research.](https://github.com/L1v1ng0ffTh3L4N/EdgeSavedPasswordsDumper)
